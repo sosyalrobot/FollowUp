@@ -1,0 +1,9 @@
+[package]
+name = "followup"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Minimal X/Twitter follow-up tracker backed by Velo-Lite."
+build = "build.rs"
+
+[dependencies]
