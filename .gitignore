@@ -1,0 +1,12 @@
+.DS_Store
+*.velo
+*.log
+.phpunit.result.cache
+vendor/
+.idea/
+.vscode/
+.env
+.env.*
+!.env.example
+data/
+target/

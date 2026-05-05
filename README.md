@@ -1,168 +1,208 @@
 # FollowUp
 
-X (Twitter) üzerinde sorduğun soruların kaybolmasını engelleyen minimal takip aracı.
+FollowUp, X/Twitter üzerinde `#fu` tag'i ile sorduğun soruların kaybolmasını engelleyen minimal takip aracıdır.
 
-Birine soru sorarsın.
-Cevap gelmez.
-Tweet akışta kaybolur.
+Hedef: düşük kaynak tüketen, deploy etmesi kolay, klasik SQL kullanmayan, Velo-Lite destekli tek binary Rust uygulaması.
 
-FollowUp bunu takip eder.
+## Özellikler
 
----
+- `#fu`, `#fu7`, `#fu14`, `#fu30` tag parse etme
+- Mention edilen hedef hesabı takip etme
+- WAITING / ANSWERED / EXPIRED / CLOSED durumları
+- Velo-Lite key-value dosya veritabanı
+- Minimal HTTP dashboard
+- JSON API
+- CLI komutları
+- Framework ve Node.js yok
 
-## Nasıl Çalışır?
+## Teknik Stack
 
-Tweet atarken veya reply yaparken küçük bir tag eklersin:
+- Rust 2021
+- Rust standard library HTTP server
+- Velo-Lite dynamic library (`../velo-lite/target/release/libvelo_lite.dylib` veya `.so`)
+- Dış Rust crate yok
+- Klasik SQL yok
+
+## Gereksinimler
+
+Parent folder içinde Velo-Lite bulunmalı:
 
 ```txt
-@unity Yeni inovatif bir şey yok mu? #fu30
-````
-
-FollowUp bu tweet’i yakalar ve takip etmeye başlar.
-
----
-
-## Tag Sistemi
-
-```txt
-#fu      → varsayılan (7 gün)
-#fu7     → 7 gün takip
-#fu14    → 14 gün takip
-#fu30    → 30 gün takip
+../velo-lite
 ```
 
----
+Velo-Lite native library hazır değilse:
 
-## Ne Takip Edilir?
-
-* Mention attığın kullanıcı (örn: @unity)
-* Tweet’e gelen cevaplar
-* Thread içindeki yanıtlar
-
----
-
-## Mantık
-
-```txt
-Tweet atıldı → #fu30
-↓
-30 gün boyunca izlenir
-↓
-Cevap geldi mi?
-    evet → ANSWERED
-    hayır → EXPIRED
+```bash
+cd ../velo-lite
+cargo build --release
 ```
 
----
+## Çalıştırma
 
-## Cevap Tespiti
-
-Bir tweet şu durumlarda "cevaplandı" sayılır:
-
-* mention edilen kullanıcı cevap verirse
-* thread’e resmi/ilişkili hesap cevap verirse
-* kullanıcı manuel kapatırsa
-
----
-
-## Süre Dolunca
-
-Cevap yoksa sistem:
-
-* durumu EXPIRED yapar
-* sana hatırlatır
-* isterse follow-up metni önerir
-
-Örnek:
-
-```txt
-30 gün geçti, hâlâ cevap yok.
-@unity bu konu hakkında bir güncelleme var mı?
+```bash
+cargo run -- serve
 ```
 
----
-
-## Kullanım Şekilleri
-
-### 1. Sadece tag ile (en hızlı)
+Varsayılan adres:
 
 ```txt
-#fu30
+http://127.0.0.1:8000
 ```
 
-### 2. Mevcut hesabınla
+Ortam değişkenleri:
 
-Sistem, senin hesabını (örn: @SosyalRobot) tarar ve tag’li tweetleri bulur.
-
----
-
-## Dashboard
-
-```txt
-WAITING   @unity     12 gün
-ANSWERED  @support   2 gün
-EXPIRED   @company   30 gün
+```bash
+FOLLOWUP_DB=./data/followup.velo
+FOLLOWUP_HOST=127.0.0.1
+FOLLOWUP_PORT=8000
+VELO_LITE_LIB_DIR=../velo-lite/target/release
+FOLLOWUP_API_TOKEN=change-this-before-public-deploy
 ```
 
----
+`FOLLOWUP_API_TOKEN` set edilirse API endpointleri `Authorization: Bearer ...` ister. Public server'da bu token'ı mutlaka set et ve uygulamayı TLS terminasyonu yapan reverse proxy arkasında çalıştır.
 
-## Modlar
+## CLI
 
-* Passive → sadece takip eder (önerilen MVP)
-* Active → otomatik follow-up reply atar
+Tweet takip et:
 
----
+```bash
+cargo run -- add --tweet-id 1001 --author @SosyalRobot --text "@unity yeni bir sey yok mu? #fu30" --created-at 2026-05-05T10:00:00Z
+```
 
-## MVP Özellikleri
+Reply kaydet:
 
-* Tag ile tweet yakalama
-* Tweet ID kaydı
-* Süre takibi
-* Reply kontrolü
-* Status: WAITING / ANSWERED / EXPIRED
-* Basit dashboard
+```bash
+cargo run -- reply --tweet-id 2001 --author @unity --text "Guncelleme yakinda." --in-reply-to 1001 --created-at 2026-05-06T10:00:00Z
+```
 
----
+Listele:
 
-## Teknik
+```bash
+cargo run -- list
+```
 
-Önerilen stack:
+Süresi dolanları işaretle:
 
-* Node.js
-* SQLite
-* Cron job
-* X API veya scraping
-* Minimal web panel
+```bash
+cargo run -- check
+```
 
----
+Manuel kapat:
+
+```bash
+cargo run -- close 1001
+```
+
+## API
+
+Health:
+
+```http
+GET /health
+```
+
+Tweet ekle:
+
+```http
+POST /api/ingest
+Content-Type: application/json
+
+{
+  "tweet_id": "1001",
+  "author": "@SosyalRobot",
+  "text": "@unity yeni bir sey yok mu? #fu30",
+  "created_at": "2026-05-05T10:00:00Z"
+}
+```
+
+Reply ekle:
+
+```http
+POST /api/ingest
+Content-Type: application/json
+
+{
+  "tweet_id": "2001",
+  "author": "@unity",
+  "text": "Guncelleme yakinda.",
+  "created_at": "2026-05-06T10:00:00Z",
+  "in_reply_to_tweet_id": "1001"
+}
+```
+
+Listele:
+
+```http
+GET /api/tweets
+GET /api/tweets?status=WAITING
+Authorization: Bearer your-token
+```
+
+Expire check:
+
+```http
+POST /api/check
+Authorization: Bearer your-token
+```
+
+Manuel kapat:
+
+```http
+POST /api/tweets/1001/close
+Authorization: Bearer your-token
+```
 
 ## Veri Modeli
 
+Velo-Lite key-value olarak kullanılır:
+
 ```txt
-TrackedTweet
-- id
-- tweet_id
-- author
-- target
-- tag
-- status
-- created_at
-- expire_at
-- answered_at
+followup:meta:next_id
+followup:index:tracked_tweets
+followup:tweet:{tweet_id}
 ```
 
----
+Her tweet JSON document olarak saklanır.
 
-## Roadmap
+```txt
+id
+tweet_id
+author
+target
+tag
+status
+text
+created_at
+expire_at
+answered_at
+answer_tweet_id
+notes
+```
 
-* Otomatik reply
-* Telegram / email bildirim
-* "kim cevap vermiyor?" istatistikleri
-* public sayfalar
-* Chrome extension
-* AI ile follow-up tonu
+## Test
 
----
+```bash
+cargo test
+```
+
+## Deploy Notu
+
+Server'a şu dosyalar gerekir:
+
+- build edilmiş `followup` binary
+- Velo-Lite shared library: `libvelo_lite.so` veya `libvelo_lite.dylib`
+- writable `FOLLOWUP_DB` path
+
+Linux deploy için Velo-Lite'ı server hedefinde build etmek en temiz seçenektir.
+
+Public deploy için önerilen ayarlar:
+
+- `FOLLOWUP_HOST=127.0.0.1`
+- Reverse proxy: nginx, Caddy veya benzeri
+- TLS açık
+- `FOLLOWUP_API_TOKEN` güçlü ve gizli bir değer
+- `data/*.velo` dosyalarını repo dışında veya ignored path altında tut
 
 ## Lisans
 
